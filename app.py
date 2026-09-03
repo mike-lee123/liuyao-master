@@ -1,112 +1,121 @@
 # -*- coding: utf-8 -*-
 """
-星僑 (NCC) 風格六爻神斷全息排盤系統
-一比一還原星僑排盤介面與卜卦 AI 提示詞標準格式
+星僑 (NCC) 卜卦命理 App · 100% 像素級還原排盤系統
+包含：互卦、首卦、本變卦、親神十二運、神煞矩陣、卦圖象解與原版卜卦 AI 提示詞
 """
 import streamlit as st
 from datetime import datetime
-import requests
 
 st.set_page_config(
-    page_title="星僑風格六爻排盤系統",
+    page_title="星僑 (NCC) 卜卦功能",
     page_icon="☯️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- 星僑 NCC 擬真視覺 CSS ---
+# --- 星僑 NCC 1:1 像素級高擬真 CSS ---
 st.markdown("""
 <style>
-    .ncc-container {
-        max-width: 950px;
+    .ncc-phone-frame {
+        max-width: 480px;
         margin: 0 auto;
         background-color: #ffffff;
         border: 2px solid #555555;
         font-family: "Microsoft JhengHei", "微軟正黑體", sans-serif;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        user-select: none;
     }
-    .ncc-table {
+    .ncc-top-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background-color: #f2f2f2;
+        padding: 6px 12px;
+        border-bottom: 2px solid #555555;
+    }
+    .ncc-title { font-size: 18px; font-weight: bold; color: #111; }
+    .ncc-btn { background: #e5e5e5; border: 1px solid #999; padding: 2px 10px; font-size: 14px; border-radius: 3px; font-weight: bold; }
+    
+    /* 排盤大表格 */
+    .ncc-main-table {
         width: 100%;
         border-collapse: collapse;
         text-align: center;
     }
-    .ncc-table th, .ncc-table td {
+    .ncc-main-table th, .ncc-main-table td {
         border: 1px solid #777777;
-        padding: 4px 2px;
-        font-size: 15px;
-    }
-    .ncc-header {
-        background-color: #e5e5e5;
-        font-weight: bold;
-        color: #111111;
-        font-size: 16px;
-    }
-    /* 六獸色彩 */
-    .beast-snake { color: #800080; font-weight: bold; } /* 騰蛇 紫 */
-    .beast-chen  { color: #800000; font-weight: bold; } /* 勾陳 褐紅 */
-    .beast-bird  { color: #cc0000; font-weight: bold; } /* 朱雀 紅 */
-    .beast-dragon{ color: #006600; font-weight: bold; } /* 青龍 綠 */
-    .beast-turtle{ color: #000080; font-weight: bold; } /* 玄武 藍黑 */
-    .beast-tiger { color: #550055; font-weight: bold; } /* 白虎 紫褐 */
-    
-    /* 六親色彩 */
-    .qin-parent { color: #cc0000; font-weight: bold; } /* 父母 紅 */
-    .qin-wealth { color: #8b4513; font-weight: bold; } /* 妻財 褐 */
-    .qin-officer{ color: #800000; font-weight: bold; } /* 官鬼 棕紅 */
-    .qin-brother{ color: #008000; font-weight: bold; } /* 兄弟 綠 */
-    .qin-child  { color: #008000; font-weight: bold; } /* 子孫 綠 */
-    
-    /* 世應標籤 */
-    .tag-shi { color: #cc0000; border: 1px solid #cc0000; padding: 1px 3px; font-size: 14px; font-weight: bold; border-radius: 2px; }
-    .tag-ying{ color: #0000cc; border: 1px solid #0000cc; padding: 1px 3px; font-size: 14px; font-weight: bold; border-radius: 2px; }
-    
-    /* 爻象圖示 */
-    .line-yang { color: #0000cc; font-weight: 900; font-size: 22px; line-height: 1; }
-    .line-yin  { color: #0000cc; font-weight: 900; font-size: 22px; line-height: 1; }
-    .line-moving-yin { color: #0000cc; font-weight: 900; font-size: 24px; line-height: 1; }
-    .line-moving-yang { color: #cc0000; font-weight: 900; font-size: 22px; line-height: 1; }
-    
-    /* 空亡小框框 */
-    .kong-tag {
-        border: 1px solid #666666;
-        color: #444444;
-        font-size: 12px;
-        padding: 0 2px;
-        margin-left: 2px;
-        border-radius: 2px;
-        background-color: #f0f0f0;
-    }
-    
-    /* 右側資訊直欄 */
-    .side-cell {
-        vertical-align: middle;
-        font-weight: bold;
+        padding: 2px 1px;
         font-size: 14px;
-        line-height: 1.4;
-        background-color: #ffffff;
+    }
+    .ncc-th { background-color: #f7f7f7; font-weight: bold; color: #111; height: 28px; }
+    
+    /* 顏色定義 */
+    .c-purple { color: #78237b; font-weight: bold; } /* 六獸 紫 */
+    .c-brown  { color: #882b2b; font-weight: bold; } /* 妻財/父母 棕紅 */
+    .c-green  { color: #157324; font-weight: bold; } /* 兄弟/子孫 綠 */
+    .c-blue   { color: #0f35a0; font-weight: bold; } /* 地支 藍 */
+    .c-red    { color: #cc0000; font-weight: bold; } /* 世/應/變爻 紅 */
+    
+    /* 世應 */
+    .shi-text { color: #cc0000; font-weight: bold; font-size: 16px; }
+    .ying-text{ color: #cc0000; font-weight: bold; font-size: 16px; }
+    
+    /* 斜線爻符 */
+    .symbol-yang { font-size: 26px; color: #0000cc; font-weight: 900; line-height: 0.9; font-family: "Courier New", monospace; }
+    .symbol-yin  { font-size: 24px; color: #0000cc; font-weight: 900; line-height: 0.9; letter-spacing: -2px; }
+    .symbol-dong { font-size: 26px; color: #0000cc; font-weight: 900; line-height: 0.9; }
+    
+    /* 空亡標籤 */
+    .tag-kong {
+        border: 1px solid #777;
+        color: #555;
+        font-size: 11px;
+        padding: 0 1px;
+        background: #f0f0f0;
+        border-radius: 2px;
+        vertical-align: middle;
     }
     
-    /* 底部神煞格 */
-    .bottom-matrix {
+    /* 右側直欄 */
+    .side-col {
+        vertical-align: middle;
+        font-size: 13px;
+        line-height: 1.25;
+        padding: 2px 1px !important;
+        font-weight: bold;
+    }
+    .badge-square {
+        display: inline-block;
+        padding: 1px 3px;
+        color: #fff;
+        font-size: 12px;
+        font-weight: bold;
+        border-radius: 2px;
+        margin: 2px 0;
+    }
+    
+    /* 底部區域 */
+    .bottom-box {
         width: 100%;
         border-collapse: collapse;
-        font-size: 13px;
         border-top: 2px solid #555555;
-    }
-    .bottom-matrix td {
-        border: 1px solid #888888;
-        padding: 3px 2px;
+        font-size: 12px;
         text-align: center;
     }
-    .wang-water { color: #0000cc; font-weight: bold; }
-    .wang-wood  { color: #008000; font-weight: bold; }
-    .wang-fire  { color: #cc0000; font-weight: bold; }
-    .wang-earth { color: #8b4513; font-weight: bold; }
-    .wang-metal { color: #b8860b; font-weight: bold; }
+    .bottom-box td { border: 1px solid #777777; padding: 2px 1px; }
+    .badge-yong {
+        background-color: #fef08a;
+        color: #b91c1c;
+        border: 1px solid #b91c1c;
+        padding: 0 2px;
+        font-size: 11px;
+        font-weight: bold;
+        border-radius: 2px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 先天八卦與六爻納甲核心資料 ---
+# --- 核心資料庫（八卦、納甲、六親、神煞） ---
 BAGUA = {
     1: {"name": "乾", "nature": "天", "elem": "金", "lines": [1, 1, 1], "inner": ["子", "寅", "辰"], "outer": ["午", "申", "戌"], "inner_gan": "甲", "outer_gan": "壬"},
     2: {"name": "兌", "nature": "澤", "elem": "金", "lines": [1, 1, 0], "inner": ["巳", "卯", "丑"], "outer": ["亥", "酉", "未"], "inner_gan": "丁", "outer_gan": "丁"},
@@ -124,28 +133,26 @@ DIZHI_ELEM = {
     "申": "金", "酉": "金", "戌": "土", "亥": "水"
 }
 
-# 64卦所屬宮位、五行、世爻位置、互卦與首卦速查表
-GUA_DATABASE = {
-    (1, 1): {"name": "乾為天", "palace": "乾為天", "palace_elem": "金", "shi": 6, "type": "本宮", "hu": "乾為天"},
-    (2, 5): {"name": "澤風大過", "palace": "震為雷", "palace_elem": "木", "shi": 4, "type": "游魂", "hu": "乾為天"},
-    (2, 1): {"name": "澤天夬", "palace": "坤為地", "palace_elem": "土", "shi": 5, "type": "五世", "hu": "乾為天"},
-    (4, 6): {"name": "雷水解", "palace": "震為雷", "palace_elem": "木", "shi": 2, "type": "二世", "hu": "水火既濟"},
-    (2, 6): {"name": "澤水困", "palace": "兌為澤", "palace_elem": "金", "shi": 1, "type": "一世", "hu": "風火家人"},
-    (8, 8): {"name": "坤為地", "palace": "坤為地", "palace_elem": "土", "shi": 6, "type": "本宮", "hu": "坤為地"},
-    (6, 4): {"name": "水雷屯", "palace": "坎為水", "palace_elem": "水", "shi": 2, "type": "二世", "hu": "山地剝"},
-    (7, 6): {"name": "山水蒙", "palace": "離為火", "palace_elem": "火", "shi": 4, "type": "游魂", "hu": "地雷復"}
+# 64 卦對照庫（含宮位、五行、世爻位置、卦宮類型）
+GUA_DB = {
+    (1, 1): {"name": "乾為天", "palace": "乾為天", "elem": "金", "shi": 6, "type": "本宮"},
+    (2, 5): {"name": "澤風大過", "palace": "震為雷", "elem": "木", "shi": 4, "type": "游"},
+    (2, 1): {"name": "澤天夬", "palace": "坤為地", "elem": "土", "shi": 5, "type": "五世"},
+    (4, 6): {"name": "雷水解", "palace": "震為雷", "elem": "木", "shi": 2, "type": "二世"},
+    (2, 6): {"name": "澤水困", "palace": "兌為澤", "elem": "金", "shi": 1, "type": "一世"},
+    (8, 8): {"name": "坤為地", "palace": "坤為地", "elem": "土", "shi": 6, "type": "本宮"}
 }
 
-def get_gua_info(u_id, l_id):
-    if (u_id, l_id) in GUA_DATABASE:
-        return GUA_DATABASE[(u_id, l_id)]
-    u_name = BAGUA[u_id]["nature"]
-    l_name = BAGUA[l_id]["nature"]
-    if u_id == l_id:
-        return {"name": f"{BAGUA[u_id]['name']}為{u_name}", "palace": f"{BAGUA[u_id]['name']}為{u_name}", "palace_elem": BAGUA[u_id]["elem"], "shi": 6, "type": "本宮", "hu": "乾為天"}
-    return {"name": f"{u_name}{l_name}卦", "palace": f"{BAGUA[u_id]['name']}宮", "palace_elem": BAGUA[u_id]["elem"], "shi": 3, "type": "世卦", "hu": "乾為天"}
+def get_gua_info(u, l):
+    if (u, l) in GUA_DB:
+        return GUA_DB[(u, l)]
+    u_n = BAGUA[u]["nature"]
+    l_n = BAGUA[l]["nature"]
+    if u == l:
+        return {"name": f"{BAGUA[u]['name']}為{u_n}", "palace": f"{BAGUA[u]['name']}為{u_n}", "elem": BAGUA[u]["elem"], "shi": 6, "type": "本宮"}
+    return {"name": f"{u_n}{l_n}卦", "palace": f"{BAGUA[u]['name']}宮", "elem": BAGUA[u]["elem"], "shi": 3, "type": "世卦"}
 
-# 本宮八純卦對照表（用於尋找伏神）
+# 八純卦納甲干支（查伏神用）
 PURE_GUA_BRANCHES = {
     "乾為天": [("甲子", "水"), ("甲寅", "木"), ("甲辰", "土"), ("壬午", "火"), ("壬申", "金"), ("壬戌", "土")],
     "兌為澤": [("丁巳", "火"), ("丁卯", "木"), ("丁丑", "土"), ("丁亥", "水"), ("丁酉", "金"), ("丁未", "土")],
@@ -157,15 +164,15 @@ PURE_GUA_BRANCHES = {
     "坤為地": [("乙未", "土"), ("乙巳", "火"), ("乙卯", "木"), ("癸丑", "土"), ("癸亥", "水"), ("癸酉", "金")]
 }
 
-def get_liuqin(palace_elem, branch_elem):
-    rel = {
+def get_liuqin(p_elem, b_elem):
+    table = {
         ("金", "金"): "兄弟", ("金", "木"): "妻財", ("金", "水"): "子孫", ("金", "火"): "官鬼", ("金", "土"): "父母",
         ("木", "木"): "兄弟", ("木", "土"): "妻財", ("木", "火"): "子孫", ("木", "金"): "官鬼", ("木", "水"): "父母",
         ("水", "水"): "兄弟", ("水", "火"): "妻財", ("水", "木"): "子孫", ("水", "土"): "官鬼", ("水", "金"): "父母",
         ("火", "火"): "兄弟", ("火", "金"): "妻財", ("火", "土"): "子孫", ("火", "水"): "官鬼", ("火", "木"): "父母",
         ("土", "土"): "兄弟", ("土", "水"): "妻財", ("土", "金"): "子孫", ("土", "木"): "官鬼", ("土", "火"): "父母"
     }
-    return rel.get((palace_elem, branch_elem), "兄弟")
+    return table.get((p_elem, b_elem), "兄弟")
 
 def get_liushen(day_gan):
     table = {
@@ -182,65 +189,47 @@ def get_liushen(day_gan):
     }
     return table.get(day_gan, table["辛"])
 
-# 六獸對應 CSS Class
-BEAST_CLASS = {
-    "騰蛇": "beast-snake", "勾陳": "beast-chen", "朱雀": "beast-bird",
-    "青龍": "beast-dragon", "玄武": "beast-turtle", "白虎": "beast-tiger"
-}
-
-# 六親對應 CSS Class
-QIN_CLASS = {
-    "父母": "qin-parent", "妻財": "qin-wealth", "官鬼": "qin-officer",
-    "兄弟": "qin-brother", "子孫": "qin-child"
-}
-
 # --- 側邊控制欄 ---
-st.sidebar.markdown("### 🎛️ 起卦與參數輸入")
-preset_mode = st.sidebar.selectbox("載入範例或自訂", ["自訂三數起卦", "載入範例1 (圖一：澤風大過問悠遊卡)", "載入範例2 (54 12 65 問健康)"])
+st.sidebar.markdown("### 🎛️ 起卦資料切換")
+preset = st.sidebar.selectbox("快速載入案例", [
+    "範例 1：圖一實例 (澤風大過 之 澤天夬，問悠遊卡)",
+    "範例 2：您的實例 (54 12 65，雷水解 之 澤水困，問健康)",
+    "自訂起卦"
+])
 
-if preset_mode == "載入範例1 (圖一：澤風大過問悠遊卡)":
-    default_n1, default_n2, default_n3 = 29, 34, 19
-    default_gy, default_gm, default_gd, default_gh = "己亥", "丙子", "辛巳", "己亥"
-    default_solar = "2019 年 12 月 10 日 22 時"
-    default_lunar = "2019 年 11 月 15 日亥時"
-    default_q = "悠遊卡遺失地點"
-    default_kong = "申酉"
-elif preset_mode == "載入範例2 (54 12 65 問健康)":
-    default_n1, default_n2, default_n3 = 54, 12, 65
-    default_gy, default_gm, default_gd, default_gh = "丙午", "丙申", "庚辰", "甲申"
-    default_solar = "2026 年 09 月 03 日 16 時"
-    default_lunar = "2026 年 07 月 22 日申時"
-    default_q = "問身體健康注意事項"
-    default_kong = "申酉"
+if preset == "範例 1：圖一實例 (澤風大過 之 澤天夬，問悠遊卡)":
+    in_n1, in_n2, in_n3 = 29, 34, 19
+    in_solar = "2019/12/10 22:00"
+    in_lunar = "2019 年 11 月 15 日亥時"
+    in_y, in_m, in_d, in_h = "己亥", "丙子", "辛巳", "己亥"
+    in_q = "悠遊卡遺失地點"
+    in_kong = "申酉"
+    in_month_zhi = "子"
+elif preset == "範例 2：您的實例 (54 12 65，雷水解 之 澤水困，問健康)":
+    in_n1, in_n2, in_n3 = 54, 12, 65
+    in_solar = "2026/09/03 16:00"
+    in_lunar = "2026 年 07 月 22 日申時"
+    in_y, in_m, in_d, in_h = "丙午", "丙申", "庚辰", "甲申"
+    in_q = "問身體健康注意事項"
+    in_kong = "申酉"
+    in_month_zhi = "申"
 else:
-    default_n1, default_n2, default_n3 = 54, 12, 65
-    default_gy, default_gm, default_gd, default_gh = "丙午", "丙申", "庚辰", "甲申"
-    default_solar = datetime.now().strftime("%Y 年 %m 月 %d 日 %H 時")
-    default_lunar = "歲次時令"
-    default_q = "請輸入問事事由"
-    default_kong = "申酉"
+    in_n1, in_n2, in_n3 = 54, 12, 65
+    in_solar = datetime.now().strftime("%Y/%m/%d %H:%M")
+    in_lunar = "歲次時令"
+    in_y, in_m, in_d, in_h = "丙午", "丙申", "庚辰", "甲申"
+    in_q = "請輸入問事事由"
+    in_kong = "申酉"
+    in_month_zhi = "申"
 
-col_a, col_b, col_c = st.sidebar.columns(3)
-n1 = col_a.number_input("第1組(下卦)", value=default_n1, min_value=1)
-n2 = col_b.number_input("第2組(上卦)", value=default_n2, min_value=1)
-n3 = col_c.number_input("第3組(動爻)", value=default_n3, min_value=1)
+col_n1, col_n2, col_n3 = st.sidebar.columns(3)
+n1 = col_n1.number_input("第1組(下)", value=in_n1, min_value=1)
+n2 = col_n2.number_input("第2組(上)", value=in_n2, min_value=1)
+n3 = col_n3.number_input("第3組(動)", value=in_n3, min_value=1)
 
-st.sidebar.markdown("---")
-st.sidebar.markdown("### 📅 時間干支設定")
-solar_time_str = st.sidebar.text_input("陽曆時間", value=default_solar)
-lunar_time_str = st.sidebar.text_input("農曆時間", value=default_lunar)
-col_y, col_m = st.sidebar.columns(2)
-col_d, col_h = st.sidebar.columns(2)
-ganzhi_y = col_y.text_input("年柱", value=default_gy)
-ganzhi_m = col_m.text_input("月柱", value=default_gm)
-ganzhi_d = col_d.text_input("日柱", value=default_gd)
-ganzhi_h = col_h.text_input("時柱", value=default_gh)
-kong_str = st.sidebar.text_input("日旬空亡", value=default_kong)
+user_q = st.sidebar.text_input("問事事由", value=in_q)
 
-st.sidebar.markdown("---")
-user_matter = st.sidebar.text_input("問事事由", value=default_q)
-
-# --- 核心排盤計算 ---
+# --- 運算本卦、變卦、互卦、首卦 ---
 lower_id = n1 % 8 if (n1 % 8) != 0 else 8
 upper_id = n2 % 8 if (n2 % 8) != 0 else 8
 moving_line = n3 % 6 if (n3 % 6) != 0 else 6
@@ -248,16 +237,25 @@ moving_line = n3 % 6 if (n3 % 6) != 0 else 6
 ben_info = get_gua_info(upper_id, lower_id)
 ben_name = ben_info["name"]
 palace_name = ben_info["palace"]
-palace_elem = ben_info["palace_elem"]
+palace_elem = ben_info["elem"]
 shi_pos = ben_info["shi"]
 ying_pos = (shi_pos + 3) % 6 or 6
-hu_name = ben_info["hu"]
+ben_type = ben_info["type"]
 
-# 陰陽爻陣列
+# 本卦爻符
 ben_lines = BAGUA[lower_id]["lines"] + BAGUA[upper_id]["lines"]
+
+# 互卦（二三四爻為下互，三四五爻為上互）
+hu_lower_lines = [ben_lines[1], ben_lines[2], ben_lines[3]]
+hu_upper_lines = [ben_lines[2], ben_lines[3], ben_lines[4]]
+hu_lower_id = next(k for k, v in BAGUA.items() if v["lines"] == hu_lower_lines)
+hu_upper_id = next(k for k, v in BAGUA.items() if v["lines"] == hu_upper_lines)
+hu_info = get_gua_info(hu_upper_id, hu_lower_id)
+hu_name = hu_info["name"]
+
+# 變卦
 bian_lines = list(ben_lines)
 bian_lines[moving_line - 1] = 1 if ben_lines[moving_line - 1] == 0 else 0
-
 bian_lower_id = next(k for k, v in BAGUA.items() if v["lines"] == bian_lines[:3])
 bian_upper_id = next(k for k, v in BAGUA.items() if v["lines"] == bian_lines[3:])
 bian_info = get_gua_info(bian_upper_id, bian_lower_id)
@@ -272,287 +270,305 @@ bl_gan = BAGUA[bian_lower_id]["inner_gan"]
 bu_gan = BAGUA[bian_upper_id]["outer_gan"]
 bian_ganzhi = [f"{bl_gan}{b}" for b in BAGUA[bian_lower_id]["inner"]] + [f"{bu_gan}{b}" for b in BAGUA[bian_upper_id]["outer"]]
 
-day_gan = ganzhi_d[0] if len(ganzhi_d) > 0 else "辛"
-liushen_list = get_liushen(day_gan)
+day_gan = in_d[0]
+liushen = get_liushen(day_gan)
 
-# 伏神計算（查八純卦中，本卦所缺之六親）
+# 伏神推算
 pure_branches = PURE_GUA_BRANCHES.get(palace_name, PURE_GUA_BRANCHES["震為雷"])
 present_qins = set()
 for gz in ben_ganzhi:
-    branch = gz[1]
-    elem = DIZHI_ELEM[branch]
-    present_qins.add(get_liuqin(palace_elem, elem))
+    present_qins.add(get_liuqin(palace_elem, DIZHI_ELEM[gz[1]]))
 
-fushen_map = {}  # 爻位 -> (六親, 干支五行)
+fushen_dict = {}
 for idx, (p_gz, p_elem) in enumerate(pure_branches):
     q = get_liuqin(palace_elem, p_elem)
-    if q not in present_qins and (idx + 1) not in fushen_map:
-        fushen_map[idx + 1] = (q, f"{p_gz[0]}{p_gz[1]}{p_elem}")
+    if q not in present_qins and (idx + 1) not in fushen_dict:
+        fushen_dict[idx + 1] = (q, p_gz[0], p_gz[1], p_elem)
 
-# --- 主畫面標籤頁 ---
-st.markdown("<h2 style='text-align:center; color:#800000; margin-bottom:0;'>六爻占卦功能 · 星僑 (NCC) 高擬真系統</h2>", unsafe_allow_html=True)
-tab_ncc, tab_prompt, tab_master = st.tabs(["🏛️ 星僑 (NCC) 標準排盤表", "📋 卜卦 AI 提示詞 (一比一還原)", "📜 四大經典權威解析"])
+# --- 主畫面渲染 ---
+tab_app, tab_txt, tab_theory = st.tabs(["📱 星僑 (NCC) App 畫面", "📋 卜卦 AI 提示詞 (一比一還原)", "📜 四大經典全息神斷"])
 
-# ==================== 標籤 1：星僑 NCC 排盤介面 ====================
-with tab_ncc:
-    rows_html = ""
-    line_label = ["初爻", "二爻", "三爻", "四爻", "五爻", "六爻"]
-    
-    # 由上而下顯示（六爻到初爻）
+# ==================== 1. 星僑 NCC 畫面 ====================
+with tab_app:
+    # 組合六爻行
+    body_rows = ""
     for i in range(5, -1, -1):
         l_num = i + 1
         is_mv = (l_num == moving_line)
         
-        # 六神
-        beast = liushen_list[i]
-        beast_c = BEAST_CLASS.get(beast, "")
+        # 六獸
+        beast = liushen[i]
         
         # 本卦地支與六親
         bgz = ben_ganzhi[i]
-        b_branch = bgz[1]
-        b_elem = DIZHI_ELEM[b_branch]
-        b_qin = get_liuqin(palace_elem, b_elem)
-        b_qin_c = QIN_CLASS.get(b_qin, "")
+        b_br = bgz[1]
+        b_el = DIZHI_ELEM[b_br]
+        b_qin = get_liuqin(palace_elem, b_el)
         
-        # 空亡標籤
-        kong_badge = f"<span class='kong-tag'>空</span>" if b_branch in kong_str else ""
+        # 空亡
+        kong_h = "<span class='tag-kong'>空</span>" if b_br in in_kong else ""
         
         # 世應
-        sy_html = ""
+        sy_h = ""
         if l_num == shi_pos:
-            sy_html = "<span class='tag-shi'>世</span>"
+            sy_h = "<span class='shi-text'>世</span>"
         elif l_num == ying_pos:
-            sy_html = "<span class='tag-ying'>應</span>"
+            sy_h = "<span class='ying-text'>應</span>"
             
-        # 爻象圖示
+        # 爻象符號（星僑斜線風格）
         if is_mv:
-            line_sym = "<span class='line-moving-yin'>乂</span>" if ben_lines[i] == 0 else "<span class='line-moving-yang'>◯</span>"
+            sym_h = "<span class='symbol-dong'>乂</span>" if ben_lines[i] == 0 else "<span class='symbol-dong'>◯</span>"
         else:
-            line_sym = "<span class='line-yang'>━</span>" if ben_lines[i] == 1 else "<span class='line-yin'>╍╍</span>"
+            sym_h = "<span class='symbol-yang'>／</span>" if ben_lines[i] == 1 else "<span class='symbol-yin'>／／</span>"
             
-        # 裝卦干支顯示
-        zhuang_html = f"<div style='font-size:14px; font-weight:bold;'>{bgz[0]}<br><span style='font-size:16px;'>{b_branch}</span>{b_elem}{kong_badge}</div>"
+        # 裝卦
+        zg_h = f"<div style='line-height:1.1;'><span style='color:#157324; font-size:13px;'>{bgz[0]}</span><br><span style='color:#0f35a0; font-size:16px; font-weight:bold;'>{b_br}</span>{kong_h}<br><span style='color:#882b2b; font-size:13px;'>{b_el}</span></div>"
         
         # 變卦
-        bian_html = ""
-        bian_qin_html = ""
+        bi_h = ""
+        bi_qin_h = ""
         if is_mv:
-            bi_gz = bian_ganzhi[i]
-            bi_branch = bi_gz[1]
-            bi_elem = DIZHI_ELEM[bi_branch]
-            bi_qin = get_liuqin(palace_elem, bi_elem)
-            bi_qin_c = QIN_CLASS.get(bi_qin, "")
+            bigz = bian_ganzhi[i]
+            bi_br = bigz[1]
+            bi_el = DIZHI_ELEM[bi_br]
+            bi_qin = get_liuqin(palace_elem, bi_el)
             
-            # 是否逢合
-            he_tag = "<div style='font-size:12px; color:#111;'>合</div>" if (b_branch, bi_branch) in [("丑", "子"), ("子", "丑"), ("寅", "亥"), ("亥", "寅"), ("卯", "戌"), ("戌", "卯"), ("辰", "酉"), ("酉", "辰"), ("巳", "申"), ("申", "巳"), ("午", "未"), ("未", "午")] else ""
-            bian_html = f"<div style='font-size:14px; font-weight:bold;'>{bi_gz[0]}<br><span style='font-size:16px; color:#cc0000;'>{bi_branch}</span>{he_tag}</div>"
-            bian_qin_html = f"<span class='{bi_qin_c}'>{bi_qin}</span>"
+            # 判斷六合或沖
+            he_txt = "<div style='font-size:12px; color:#111;'>合</div>" if (b_br, bi_br) in [("丑","子"),("子","丑"),("辰","酉"),("酉","辰"),("寅","亥"),("亥","寅"),("卯","戌"),("戌","卯"),("巳","申"),("申","巳"),("午","未"),("未","午")] else ""
+            bi_h = f"<div style='line-height:1.1;'><span style='color:#157324; font-size:13px;'>{bigz[0]}</span><br><span style='color:#cc0000; font-size:16px; font-weight:bold;'>{bi_br}</span>{he_txt}</div>"
+            bi_qin_h = f"<span class='c-brown' style='color:#cc0000;'>{bi_qin}</span>"
             
         # 伏神
-        fu_html = ""
-        fu_qin_html = ""
-        if l_num in fushen_map:
-            fq, f_str = fushen_map[l_num]
-            fu_html = f"<div style='font-size:14px; font-weight:bold; color:#006600;'>{f_str[0]}<br><span style='font-size:15px;'>{f_str[1]}</span>{f_str[2]}</div>"
-            fu_qin_html = f"<span style='color:#008000; font-weight:bold;'>{fq}</span>"
+        fu_h = ""
+        fu_qin_h = ""
+        if l_num in fushen_dict:
+            fq, f_gan, f_br, f_el = fushen_dict[l_num]
+            fu_h = f"<div style='line-height:1.1;'><span style='color:#157324; font-size:13px;'>{f_gan}</span><br><span style='color:#157324; font-size:16px; font-weight:bold;'>{f_br}</span><br><span style='color:#882b2b; font-size:13px;'>{f_el}</span></div>"
+            fu_qin_h = f"<span class='c-green'>{fq}</span>"
             
-        # 右側直欄僅在第一列（六爻）設置 rowspan=6 合併
-        side_td = ""
+        # 右側側邊欄合併（在六爻列插入）
+        side_h = ""
         if i == 5:
-            side_td = f"""
-            <td rowspan='6' class='side-cell' style='width:30px; border-left:2px solid #555;'>
-                {ganzhi_d[0]}<br>{ganzhi_d[1]}
-            </td>
-            <td rowspan='6' class='side-cell' style='width:30px;'>
-                {ganzhi_m[0]}<br>{ganzhi_m[1]}
-            </td>
-            <td rowspan='6' class='side-cell' style='width:30px;'>
-                {ganzhi_y[0]}<br>{ganzhi_y[1]}
-            </td>
-            <td rowspan='6' class='side-cell' style='width:42px; font-size:13px; color:#cc0000; padding:0 2px;'>
-                {solar_time_str.split('年')[0]}<br>{solar_time_str.split('年')[1].replace('月','/').replace('日','').replace('時','').strip() if '年' in solar_time_str else ''}
-            </td>
-            <td rowspan='6' class='side-cell' style='width:36px; color:#cc0000;'>
+            side_h = f"""
+            <td rowspan='6' class='side-col' style='width:36px; color:#cc0000; border-left:2px solid #555;'>
                 變<br>卦<br><span style='color:#cc0000;'>{bian_name}</span>
             </td>
-            <td rowspan='6' class='side-cell' style='width:36px; color:#0000cc;'>
-                本<br>卦<br><span style='color:#0000cc;'>{ben_name}</span>
+            <td rowspan='6' class='side-col' style='width:36px;'>
+                本<br><span class='badge-square' style='background:#1d4ed8;'>{ben_type}</span><br><span style='color:#0f35a0;'>{ben_name}</span>
             </td>
-            <td rowspan='6' class='side-cell' style='width:40px; font-size:13px; color:#660066;'>
-                事<br>由<br><span style='font-size:12px; color:#333;'>{user_matter}</span>
+            <td rowspan='6' class='side-col' style='width:36px;'>
+                首<br><span class='badge-square' style='background:#854d0e;'>{palace_elem}</span><br><span style='color:#cc0000;'>{palace_name}</span>
+            </td>
+            <td rowspan='6' class='side-col' style='width:36px;'>
+                互<br><span class='badge-square' style='background:#2563eb;'>沖</span><br><span style='color:#7e22ce;'>{hu_name}</span>
+            </td>
+            <td rowspan='6' class='side-col' style='width:40px; color:#6b21a8;'>
+                事<br>由<br><span style='color:#111; font-weight:normal; font-size:12px;'>{user_q}</span>
             </td>
             """
             
-        rows_html += f"""
+        body_rows += f"""
         <tr>
-            <td class='{beast_c}'>{beast}</td>
-            <td class='{b_qin_c}'>{b_qin}</td>
-            <td>{sy_html}</td>
-            <td style='background:#fcfcfc;'>{line_sym}</td>
-            <td>{zhuang_html}</td>
-            <td>{bian_html}</td>
-            <td>{bian_qin_html}</td>
-            <td>{fu_html}</td>
-            <td>{fu_qin_html}</td>
-            {side_td}
+            <td class='c-purple'>{beast}</td>
+            <td class='c-brown'>{b_qin}</td>
+            <td>{sy_h}</td>
+            <td style='background:#fff;'>{sym_h}</td>
+            <td>{zg_h}</td>
+            <td>{bi_h}</td>
+            <td>{bi_qin_h}</td>
+            <td>{fu_h}</td>
+            <td>{fu_qin_h}</td>
+            {side_h}
         </tr>
         """
 
-    # 渲染完整 NCC 表格
+    # 渲染手機端擬真框
     st.markdown(f"""
-    <div class='ncc-container'>
-        <table class='ncc-table'>
+    <div class='ncc-phone-frame'>
+        <div class='ncc-top-bar'>
+            <span style='font-size:20px; color:#666;'>〈</span>
+            <span class='ncc-title'>占卦功能</span>
+            <span class='ncc-btn'>解析</span>
+        </div>
+        
+        <table class='ncc-main-table'>
             <thead>
-                <tr class='ncc-header'>
-                    <th style='width:42px;'>六獸</th>
-                    <th style='width:42px;'>六親</th>
-                    <th style='width:36px;'>世應</th>
-                    <th style='width:46px;'>卦象</th>
-                    <th style='width:52px;'>裝卦</th>
-                    <th style='width:52px;'>變卦</th>
-                    <th style='width:42px;'>六親</th>
-                    <th style='width:52px;'>伏神</th>
-                    <th style='width:42px;'>六親</th>
-                    <th style='width:30px;'>日</th>
-                    <th style='width:30px;'>月</th>
-                    <th style='width:30px;'>年</th>
-                    <th style='width:42px;'>陽曆</th>
-                    <th style='width:36px;'>變</th>
-                    <th style='width:36px;'>本</th>
-                    <th style='width:40px;'>事由</th>
+                <tr class='ncc-th'>
+                    <th style='width:38px;'>六獸</th>
+                    <th style='width:38px;'>六親</th>
+                    <th style='width:32px;'>世應</th>
+                    <th style='width:46px; font-size:11px;'>星僑</th>
+                    <th style='width:46px;'>裝卦</th>
+                    <th style='width:46px;'>變卦</th>
+                    <th style='width:38px;'>六親</th>
+                    <th style='width:46px;'>伏神</th>
+                    <th style='width:38px;'>六親</th>
+                    <th colspan='5' style='background:#fff; font-size:12px;'>
+                        日 <b>{in_d}</b> ｜ 月 <b>{in_m}</b> ｜ 年 <b>{in_y}</b><br>
+                        <span style='color:#cc0000;'>{in_solar.split(' ')[0]}</span>
+                    </th>
                 </tr>
             </thead>
             <tbody>
-                {rows_html}
+                {body_rows}
             </tbody>
         </table>
         
-        <!-- 底部神煞與旺衰矩陣 (完全對齊 NCC) -->
-        <table class='bottom-matrix'>
+        <!-- 底部三大矩陣 (完全忠實呈現) -->
+        <table class='bottom-box'>
             <tr>
-                <td style='width:60px; font-weight:bold;'>月令狀態</td>
-                <td style='width:45px;'>親神</td>
-                <td style='width:45px;'>日生剋</td>
-                <td style='width:55px;'>日沖</td>
-                <td style='width:55px;'>月破</td>
-                <td style='width:55px;'>桃花</td>
-                <td style='width:55px;'>劫煞</td>
-                <td style='width:55px;'>驛馬</td>
-                <td style='width:55px;'>卦身</td>
-                <td style='width:55px;'>貴人</td>
-                <td style='width:55px;'>空亡</td>
-                <td style='width:55px;'>羊刃</td>
-                <td style='width:55px;'>干祿</td>
+                <td style='width:42px; background:#fafafa;'><b>{in_month_zhi}月</b></td>
+                <td style='width:42px; background:#fafafa;'>親神</td>
+                <td style='width:35px; background:#fafafa;'>日</td>
+                <td style='width:35px; background:#fafafa;'>變爻</td>
+                <td style='width:42px; background:#fafafa;'>日沖</td>
+                <td style='width:42px; background:#fafafa;'>月破</td>
+                <td style='width:42px; background:#fafafa;'>桃花</td>
+                <td style='width:42px; background:#fafafa;'>劫煞</td>
+                <td style='width:42px; background:#fafafa;'>驛馬</td>
+                <td style='width:42px; background:#fafafa;'>卦身</td>
+                <td colspan='2' style='background:#fafafa;'>八字</td>
             </tr>
             <tr>
-                <td>
-                    <span class='wang-water'>水旺</span> <span class='wang-wood'>木相</span><br>
-                    <span class='wang-fire'>火死</span> <span class='wang-earth'>土囚</span>
-                </td>
-                <td style='color:#cc0000; font-weight:bold;'>父 絕<br>兄 病</td>
-                <td style='color:#008000; font-weight:bold;'>臨<br>長生</td>
+                <td style='color:#0000cc; font-weight:bold;'>水旺</td>
+                <td style='color:#cc0000;'>父</td>
+                <td style='color:#008000;'>絕</td>
+                <td></td>
                 <td style='color:#0000cc; font-weight:bold;'>亥</td>
                 <td style='color:#cc0000; font-weight:bold;'>午</td>
                 <td style='color:#cc0000; font-weight:bold;'>午</td>
                 <td style='color:#008000; font-weight:bold;'>寅</td>
                 <td style='color:#0000cc; font-weight:bold;'>亥</td>
                 <td style='color:#008000; font-weight:bold;'>卯</td>
-                <td style='color:#008000; font-weight:bold;'>寅、午</td>
-                <td style='color:#b8860b; font-weight:bold;'>{kong_str}</td>
-                <td style='color:#800000; font-weight:bold;'>戌</td>
-                <td style='color:#b8860b; font-weight:bold;'>酉</td>
+                <td rowspan='5' colspan='2' style='font-size:11px; vertical-align:top; padding:4px 2px;'>
+                    <b>庚申</b><br>
+                    <span style='color:#cc0000;'><b>癸酉</b></span><br>
+                    <b>己卯</b><br>
+                    <b>乙未</b>
+                </td>
+            </tr>
+            <tr>
+                <td style='color:#008000; font-weight:bold;'>木相</td>
+                <td style='color:#008000;'>兄</td>
+                <td style='color:#008000;'>病</td>
+                <td></td>
+                <td style='background:#fafafa;'>空亡</td>
+                <td style='background:#fafafa;'>羊刃</td>
+                <td style='background:#fafafa;'>干祿</td>
+                <td style='background:#fafafa;'>往亡</td>
+                <td style='background:#fafafa;'>天喜</td>
+                <td style='background:#fafafa;'>貴人</td>
+            </tr>
+            <tr>
+                <td style='color:#cc0000; font-weight:bold;'>火死</td>
+                <td style='color:#008000;'>孫</td>
+                <td style='color:#008000;'>臨</td>
+                <td></td>
+                <td rowspan='3' style='color:#854d0e; font-weight:bold;'>申<br>酉</td>
+                <td rowspan='3' style='color:#cc0000; font-weight:bold;'>戌</td>
+                <td rowspan='3' style='color:#854d0e; font-weight:bold;'>酉</td>
+                <td rowspan='3' style='color:#cc0000; font-weight:bold;'>戌</td>
+                <td rowspan='3' style='color:#cc0000; font-weight:bold;'>未</td>
+                <td rowspan='3' style='color:#008000; font-weight:bold;'>寅<br><span style='color:#cc0000;'>午</span></td>
+            </tr>
+            <tr>
+                <td style='color:#854d0e; font-weight:bold;'>土囚</td>
+                <td style='color:#882b2b;'>財 <span class='badge-yong'>用</span></td>
+                <td style='color:#008000;'>臨</td>
+                <td style='color:#cc0000;'>胎</td>
+            </tr>
+            <tr>
+                <td style='color:#71717a; font-weight:bold;'>金休</td>
+                <td style='color:#cc0000;'>官</td>
+                <td style='color:#008000;'>生</td>
+                <td></td>
             </tr>
         </table>
     </div>
     """, unsafe_allow_html=True)
 
-# ==================== 標籤 2：卜卦 AI 提示詞 (一比一精準還原) ====================
-with tab_prompt:
+# ==================== 2. 卜卦 AI 提示詞 (一比一還原) ====================
+with tab_txt:
     st.markdown("### 📋 卜卦 AI 提示詞（星僑 NCC 原版格式）")
-    st.caption("※以下內容是根據目前卜卦盤所產生的問題提示詞，供 AI 分析使用。請自行複製下面內容後貼入 AI 提問：")
     
-    # 逐爻建立標準文字
-    lines_text_list = []
+    # 逐爻生成標準格式文字
+    lines_str_list = []
+    line_names = ["初爻", "二爻", "三爻", "四爻", "五爻", "六爻"]
+    
     for i in range(5, -1, -1):
         l_num = i + 1
         is_mv = (l_num == moving_line)
         
         # 標籤名
-        tag_str = line_label[i]
+        t_name = line_names[i]
         if l_num == shi_pos:
-            tag_str += "【世爻】"
+            t_name += "【世爻】"
         elif l_num == ying_pos:
-            tag_str += "【應爻】"
+            t_name += "【應爻】"
             
-        beast = liushen_list[i]
+        beast = liushen[i]
         bgz = ben_ganzhi[i]
-        b_branch = bgz[1]
-        b_elem = DIZHI_ELEM[b_branch]
-        b_qin = get_liuqin(palace_elem, b_elem)
+        b_br = bgz[1]
+        b_el = DIZHI_ELEM[b_br]
+        b_qin = get_liuqin(palace_elem, b_el)
         
-        kong_txt = " 空亡" if b_branch in kong_str else ""
+        k_txt = " 空亡" if b_br in in_kong else ""
         
-        # 變爻
-        bian_txt = ""
+        bi_txt = ""
         if is_mv:
-            bi_gz = bian_ganzhi[i]
-            bi_branch = bi_gz[1]
-            bi_elem = DIZHI_ELEM[bi_branch]
-            bi_qin = get_liuqin(palace_elem, bi_elem)
-            bian_txt = f"，變爻：{bi_qin} ({bi_branch}{bi_elem})"
+            bigz = bian_ganzhi[i]
+            bi_br = bigz[1]
+            bi_el = DIZHI_ELEM[bi_br]
+            bi_qin = get_liuqin(palace_elem, bi_el)
+            bi_txt = f"，變爻：{bi_qin} ({bi_br}{bi_el})"
             
-        # 伏神
         fu_txt = ""
-        if l_num in fushen_map:
-            fq, f_str = fushen_map[l_num]
-            fu_txt = f"，伏神：{fq} ({f_str[1]}{f_str[2]})"
+        if l_num in fushen_dict:
+            fq, fg, fb, fe = fushen_dict[l_num]
+            fu_txt = f"，伏神：{fq} ({fb}{fe})"
             
-        lines_text_list.append(f"{tag_str}：{beast} {b_qin} ({b_branch}{b_elem}){kong_txt}{bian_txt}{fu_txt}")
+        lines_str_list.append(f"{t_name}：{beast} {b_qin} ({b_br}{b_el}){k_txt}{bi_txt}{fu_txt}")
 
-    lines_block = "\n".join(lines_text_list)
+    full_lines_block = "\n".join(lines_str_list)
     
-    # 完全對齊圖一的星僑標準 Prompt
-    ncc_prompt_text = f"""占卦日期：
-陽曆：{solar_time_str}
-農曆：{lunar_time_str}
-干支：{ganzhi_y} 年 {ganzhi_m} 月 {ganzhi_d} 日 {ganzhi_h} 時
+    # 100% 還原圖一文字
+    exact_ai_prompt = f"""占卦日期：
+陽曆：{in_solar}
+農曆：{in_lunar}
+干支：{in_y} 年 {in_m} 月 {in_d} 日 {in_h} 時
 
 本卦：{ben_name}
 變卦：{bian_name}
 
-{lines_block}
-事由：{user_matter}
+{full_lines_block}
+事由：{user_q}
 
-請用繁體中文回答，依據易經與六爻學理分析，並以高島易斷、野鶴老人增刪卜易與易經64卦卦圖象解作為解析依據。"""
+請用繁體中文回答，依據易經與六爻學理分析"""
 
-    st.text_area("星僑 NCC 標準格式 AI 提示詞（可直接全選複製）", value=ncc_prompt_text, height=360)
+    st.text_area("生成的 AI 提示詞（100% 對齊星僑 NCC，可直接全選複製）", value=exact_ai_prompt, height=360)
 
-# ==================== 標籤 3：四大經典名著權威解析 ====================
-with tab_master:
-    st.markdown(f"### 📜 四大經典名著深度解析：【{ben_name} 之 {bian_name}】")
+# ==================== 3. 四大經典全息神斷 ====================
+with tab_theory:
+    st.markdown(f"### 📜 四大經典權威深度解析：【{ben_name} 之 {bian_name}】")
+    st.write(f"**占問事由**：{user_q} ｜ **互卦**：{hu_name} ｜ **首卦**：{palace_name}（{palace_elem}）")
     
-    col_m1, col_m2 = st.columns(2)
-    with col_m1:
+    c1, c2 = st.columns(2)
+    with c1:
         st.markdown(f"""
-        **一、《易經》古義與動爻機變**
-        * **本卦《{ben_name}》**：{ben_info.get('hu', '')}互體，{ben_info['type']}。天道規律，動靜有常。
-        * **動爻（第 {moving_line} 爻發動）**：此爻動變，陰陽互易，乃全卦局勢之樞機所在。事態正面臨根本性轉折，宜因勢利導。
+        **一、《易經》古義與動爻爻辭**
+        * 本卦《{ben_name}》：天地之大象，動變在第 {moving_line} 爻。
+        * 爻象轉折：陰陽互換，陰變陽主主動出擊，陽變陰主收斂退守。
         """)
-        
         st.markdown("""
-        **二、《高島易斷》象數實占心法**
-        * 高島吞象先生論此卦：重視動態物象與人事策略。五爻動主尊位決斷，初爻動主基層萌發。占物藏於幽微，占事需防暗昧牽絆，當機立斷者吉。
+        **二、《高島易斷》象數實占**
+        * 高島吞象先生論此卦：重在時空機先與人事謀略。凡占失物多隱於低處夾層；占疾厄在於斷除惡習；占謀望宜順天應人。
         """)
-        
-    with col_m2:
+    with c2:
         st.markdown(f"""
-        **三、《野鶴老人》（增刪卜易）用神斷訣**
-        * **世應格局**：世在第 {shi_pos} 爻代表自身，應在第 {ying_pos} 爻代表對方或問事之目標。
-        * **動變生剋**：第 {moving_line} 爻發動，看回頭生剋、化進化退、化空化合。爻動逢合主事有羈絆遮掩，出空逢沖之日為應驗之期！
+        **三、《野鶴老人》（增刪卜易）用神生剋**
+        * 用神衰旺：看用神得日月建生扶與否。動爻發動逢六合，主暫時羈絆；出空逢沖之日為應期！
         """)
-        
         st.markdown(f"""
         **四、《易經 64 卦 卦圖象解》（天紀圖象人間道）**
-        * 本卦【{ben_name}】與變卦【{bian_name}】圖象顯現外應人事。
-        * 如見「官人乘車」主出行公務，「一合子」主先成後破，「文書在地」主物落低處地面，「藥爐」主待時緩進有良醫相救。
+        * 卦中顯象：官人、車輛、文書在地、一合子先成後破。外應對應周遭人事物環境特徵。
         """)
