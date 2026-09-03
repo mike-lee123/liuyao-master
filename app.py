@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 """
 六爻神斷 · 回答觀眾專用 App
-整合：三數起卦 + 星僑NCC純圖形排盤 + 四維經典全息神斷 + 超深入生活化場景轉譯
+整合：三數起卦 + 星僑NCC純圖形排盤 + 四維經典全息神斷 + 超深入生活化轉譯 + 原生 Google Gemini API 一鍵解盤
 """
 import streamlit as st
 import streamlit.components.v1 as components
 from datetime import datetime
 import requests
+import json
 
 st.set_page_config(
     page_title="六爻神斷 · 回答觀眾專用 App",
@@ -147,7 +148,7 @@ def make_vert_svg(text, x, y_start, font_size=14, color="#111111", line_gap=19, 
         svg_pieces.append(f'<text x="{x}" y="{y_pos}" font-size="{font_size}" font-weight="bold" fill="{color}" text-anchor="middle">{ch}</text>')
     return "".join(svg_pieces)
 
-# --- 核心排盤運算 ---
+# --- 核心排盤演算法運算 ---
 lower_id = n1 % 8 if (n1 % 8) != 0 else 8
 upper_id = n2 % 8 if (n2 % 8) != 0 else 8
 moving_line = n3 % 6 if (n3 % 6) != 0 else 6
@@ -223,7 +224,7 @@ for i in range(6):
         bi_gan, bi_zhi, bi_qin, bi_he, fu_gan, fu_zhi, fu_el, fu_qin
     ))
 
-# --- SVG 向量圖形產生 ---
+# --- SVG 產生器 ---
 def generate_ncc_svg():
     W, H = 460, 820
     svg = f'''
@@ -370,7 +371,6 @@ def generate_ncc_svg():
         <text x="64" y="545" font-size="13" font-weight="bold" fill="#cc0000" text-anchor="middle">官</text>
         <text x="105" y="545" font-size="13" font-weight="bold" fill="#008000" text-anchor="middle">生</text>
 
-        <!-- 神煞方陣 -->
         <rect x="160" y="402" width="29" height="75" fill="#fff" stroke="#777" stroke-width="0.8"/>
         <text x="174" y="418" font-size="12" fill="#111" text-anchor="middle">日</text><text x="174" y="432" font-size="12" fill="#111" text-anchor="middle">沖</text>
         <text x="174" y="462" font-size="15" font-weight="bold" fill="#0000cc" text-anchor="middle">亥</text>
@@ -421,7 +421,6 @@ def generate_ncc_svg():
         <text x="320" y="528" font-size="14" font-weight="bold" fill="#008000" text-anchor="middle">寅</text>
         <text x="320" y="546" font-size="14" font-weight="bold" fill="#cc0000" text-anchor="middle">午</text>
 
-        <!-- 八字區 -->
         <rect x="335" y="402" width="125" height="151" fill="#ffffff" stroke="#777" stroke-width="1"/>
         <text x="397" y="420" font-size="14" font-weight="bold" fill="#111" text-anchor="middle">八  字</text>
         <text x="350" y="445" font-size="14" font-weight="bold" fill="#111">庚</text><text x="350" y="462" font-size="14" font-weight="bold" fill="#111">申</text>
@@ -436,16 +435,60 @@ def generate_ncc_svg():
     '''
     return svg
 
-# --- 5. 主畫面標籤頁 ---
+# --- 頁面標籤頁配置 ---
 st.markdown("<h2 style='text-align:center; color:#7f1d1d; margin-bottom:5px;'>🎙️ 六爻神斷 · 回答觀眾專用 App</h2>", unsafe_allow_html=True)
 st.markdown(f"<p style='text-align:center; color:#666;'>當前連線諮詢觀眾：<b>{viewer_name}</b> ｜ 提問：<b>{user_q}</b></p>", unsafe_allow_html=True)
 
 tab_report, tab_pan, tab_prompt, tab_ai = st.tabs([
     "🎙️ 回答觀眾大師說詞 (生活化轉譯)",
     "📱 星僑 (NCC) 手機純圖形排盤",
-    "📋 頂級 Prompt 產生器 (一鍵複製)",
-    "⚡ 線上 AI 一鍵直出"
+    "📋 頂級生活化 Prompt (一鍵複製)",
+    "⚡ Google Gemini AI 一鍵即時批卦"
 ])
+
+# 準備頂級 Prompt 內容
+line_labels = ["初爻", "二爻", "三爻", "四爻", "五爻", "六爻"]
+p_lines = []
+for i in range(5, -1, -1):
+    l_num = i + 1
+    beast, b_qin, sy_label, sym_type, b_gan, b_zhi, b_el, is_kong, bi_gan, bi_zhi, bi_qin, bi_he, fu_gan, fu_zhi, fu_el, fu_qin = dynamic_lines[i]
+    tag = line_labels[i] + (f"【{sy_label}爻】" if sy_label else "")
+    k_str = " 空亡" if is_kong else ""
+    bi_str = f"，變爻：{bi_qin} ({bi_zhi}{DIZHI_ELEM[bi_zhi]})" if bi_zhi else ""
+    fu_str = f"，伏神：{fu_qin} ({fu_zhi}{fu_el})" if fu_zhi else ""
+    p_lines.append(f"{tag}：{beast} {b_qin} ({b_zhi}{b_el}){k_str}{bi_str}{fu_str}")
+
+full_prompt_text = f"""【角色設定】
+你是一位精通納甲六爻與象數易學的國學宗師，正透過線上直播節目為觀眾「{viewer_name}」解答疑惑。你的解說風格溫暖、極具親和力、一針見血、充滿生活畫面感，絕不說空洞的術數黑話，全篇轉譯為現代生活場景。
+
+【占卦資訊】
+觀眾稱呼：{viewer_name} ｜ 問事主題：{user_q}
+占卦時間：{c_solar} ｜ 干支：{c_y}年 {c_m}月 {c_d}日 {c_h}時 ｜ 旬空：{c_kong}
+本卦：{ben_name}（{palace_elem}宮） ｜ 變卦：{bian_name} ｜ 互卦：{hu_name} ｜ 首卦：{shou_name}
+
+【六爻排盤詳情】
+{chr(10).join(p_lines)}
+
+────────────────────────────────────────
+【請嚴格依據以下「四維經典 × 超深入生活化轉譯」為觀眾解卦】
+
+一、【大師開場定心丸】
+開門見山給觀眾明確結果（能成/不能成、能找回/不能找回、吉或凶），讓觀眾瞬間安心。
+
+二、【生活場景逼真還原】
+結合《易經64卦卦圖象解》與動爻，具體描摹當事人在家裡、辦公室、交通工具上的日常行為與環境細節（如包包黑洞底層、沙發夾縫、出門急促等）。
+
+三、【身心痛點精確共鳴】
+點出當事人最近的身體痛點（肩頸僵硬、喉嚨乾、睡眠品質、腸胃排便）與內心焦慮糾結點。
+
+四、【四維經典深度破局】
+1. 野鶴老人：論用神旺衰與動變回頭合，推算精確應期（何日何時見分曉）。
+2. 高島易斷：剖析當前時空機先與謀略對策。
+3. 易經經文：引述動爻爻辭，給予處世智慧指引。
+
+五、【超實用生活處方箋】
+提供 2~3 條明天就能立刻執行的日常行動清單（收納排查方位、生活習慣改善、調養心法）。
+請全程使用繁體中文，語氣溫暖、直擊痛點！"""
 
 # ==================== 標籤 1：回答觀眾大師說詞 ====================
 with tab_report:
@@ -522,85 +565,44 @@ with tab_pan:
 # ==================== 標籤 3：頂級 AI Prompt 產生器 ====================
 with tab_prompt:
     st.markdown("### 📋 頂級生活化 AI 提示詞（可直接複製至各大 AI）")
-    
-    line_labels = ["初爻", "二爻", "三爻", "四爻", "五爻", "六爻"]
-    p_lines = []
-    for i in range(5, -1, -1):
-        l_num = i + 1
-        beast, b_qin, sy_label, sym_type, b_gan, b_zhi, b_el, is_kong, bi_gan, bi_zhi, bi_qin, bi_he, fu_gan, fu_zhi, fu_el, fu_qin = dynamic_lines[i]
-        tag = line_labels[i] + (f"【{sy_label}爻】" if sy_label else "")
-        k_str = " 空亡" if is_kong else ""
-        bi_str = f"，變爻：{bi_qin} ({bi_zhi}{DIZHI_ELEM[bi_zhi]})" if bi_zhi else ""
-        fu_str = f"，伏神：{fu_qin} ({fu_zhi}{fu_el})" if fu_zhi else ""
-        p_lines.append(f"{tag}：{beast} {b_qin} ({b_zhi}{b_el}){k_str}{bi_str}{fu_str}")
+    st.text_area("生成的頂級 Prompt（一鍵全選複製）", value=full_prompt_text, height=360)
 
-    prompt_text = f"""【角色設定】
-你是一位精通納甲六爻與象數易學的國學宗師，正透過線上節目為觀眾「{viewer_name}」解答疑惑。你的風格溫暖、一針見血、充滿生活畫面感，絕不說空洞的術數黑話，全篇轉譯為現代生活場景。
-
-【占卦資訊】
-觀眾稱呼：{viewer_name} ｜ 問事主題：{user_q}
-占卦時間：{c_solar} ｜ 干支：{c_y}年 {c_m}月 {c_d}日 {c_h}時 ｜ 旬空：{c_kong}
-本卦：{ben_name}（{palace_elem}宮） ｜ 變卦：{bian_name} ｜ 互卦：{hu_name} ｜ 首卦：{shou_name}
-
-【六爻排盤詳情】
-{chr(10).join(p_lines)}
-
-────────────────────────────────────────
-【請嚴格依據以下「四維經典 × 超深入生活化轉譯」進行回答】
-
-一、【大師開場定心丸】
-開門見山給觀眾明確結果（能成/不能成、能找回/不能找回、吉或凶），讓觀眾瞬間安心。
-
-二、【生活場景逼真還原】
-結合《易經64卦卦圖象解》與動爻，具體描摹當事人在家裡、辦公室、交通工具上的日常行為與環境細節（如包包黑洞底層、沙發縫隙、出門急促等）。
-
-三、【身心痛點精確共鳴】
-點出當事人最近的身體痛點（肩頸僵硬、喉嚨乾、睡眠品質、腸胃排便）與內心焦慮。
-
-四、【四維經典深度破局】
-1. 野鶴老人：論用神旺衰與動變回頭合，推算精確應期（何日何時見分曉）。
-2. 高島易斷：剖析當前時空機先與謀略對策。
-3. 易經經文：引述動爻爻辭，給予處世智慧指引。
-
-五、【超實用生活處方箋】
-提供 2~3 條明天就能立刻執行的日常行動清單（收納排查方位、生活習慣改善、調養心法）。
-請以極具親和力、專業且富有溫度的繁體中文回答！"""
-
-    st.text_area("生成的頂級 Prompt（一鍵全選複製）", value=prompt_text, height=360)
-
-# ==================== 標籤 4：線上 AI 一鍵直連 ====================
+# ==================== 標籤 4：Google Gemini AI 一鍵即時批卦 ====================
 with tab_ai:
-    st.markdown("### ⚡ 線上 AI 一鍵直連（支援 DeepSeek / OpenAI）")
-    st.caption("填入您的 API Key，即可直接在下方生成專屬於此觀眾的數千字深度批卦報告！")
+    st.markdown("### ⚡ Google Gemini AI 一鍵即時批卦 (推薦免費)")
+    st.info("💡 **貼心提示**：Google Gemini 擁有超大免費額度，無需綁定信用卡！前往 [aistudio.google.com/apikey](https://aistudio.google.com/apikey) 即可 1 分鐘免費取得金鑰。")
     
     col_k1, col_k2 = st.columns([3, 1])
-    api_k = col_k1.text_input("輸入 API Key (如 sk-...)", type="password")
-    api_url = col_k2.selectbox("API 服務商", ["DeepSeek", "OpenAI"])
+    gemini_key = col_k1.text_input("輸入 Gemini API Key (以 AIzaSy... 開頭)", type="password")
+    model_choice = col_k2.selectbox("模型版本", ["gemini-1.5-flash (極速推薦)", "gemini-1.5-pro (深度推理)"])
     
-    endpoint = "https://api.deepseek.com/v1" if api_url == "DeepSeek" else "https://api.openai.com/v1"
-    model_id = "deepseek-chat" if api_url == "DeepSeek" else "gpt-4o-mini"
+    selected_model = "gemini-1.5-flash" if "flash" in model_choice else "gemini-1.5-pro"
     
-    if st.button("🚀 啟動大師即時深度批盤"):
-        if not api_k:
-            st.warning("請先輸入 API Key！")
+    if st.button("🚀 啟動 Gemini AI 大師現場即時批盤"):
+        if not gemini_key:
+            st.warning("請先輸入您的 Gemini API Key！")
         else:
-            with st.spinner("六爻大師正在結合四大名著與生活場景為觀眾批盤中..."):
+            with st.spinner("六爻大師正在連線 Google Gemini 凝神推演四大名著與生活場景..."):
                 try:
-                    headers = {"Authorization": f"Bearer {api_k}", "Content-Type": "application/json"}
+                    # 使用原生 REST API 呼叫 Gemini，零套件依賴，100% 穩定！
+                    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{selected_model}:generateContent?key={gemini_key}"
+                    headers = {"Content-Type": "application/json"}
                     payload = {
-                        "model": model_id,
-                        "messages": [
-                            {"role": "system", "content": "你是一位頂級六爻神斷宗師，精通野鶴老人、高島易斷、天紀卦圖象解與易經經文，擅長將易理轉化為生動的生活場景。"},
-                            {"role": "user", "content": prompt_text}
-                        ],
-                        "temperature": 0.7
+                        "contents": [{
+                            "parts": [{"text": full_prompt_text}]
+                        }],
+                        "generationConfig": {
+                            "temperature": 0.7,
+                            "maxOutputTokens": 2048
+                        }
                     }
-                    r = requests.post(f"{endpoint}/chat/completions", headers=headers, json=payload, timeout=60)
-                    if r.status_code == 200:
-                        ans = r.json()["choices"][0]["message"]["content"]
-                        st.markdown(f"### 🏆 為【{viewer_name}】生成的專屬解卦報告")
+                    resp = requests.post(gemini_url, headers=headers, json=payload, timeout=60)
+                    if resp.status_code == 200:
+                        res_data = resp.json()
+                        ans = res_data["candidates"][0]["content"]["parts"][0]["text"]
+                        st.markdown(f"### 🏆 Gemini 大師為【{viewer_name}】親批之全息解盤報告")
                         st.markdown(ans)
                     else:
-                        st.error(f"連線失敗：{r.status_code} - {r.text}")
+                        st.error(f"Gemini API 呼叫失敗，狀態碼：{resp.status_code}，錯誤訊息：{resp.text}")
                 except Exception as e:
-                    st.error(f"呼叫錯誤：{e}")
+                    st.error(f"連線異常：{e}")
