@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 星僑 (NCC) 卜卦命理 App · 向量圖形介面 (GUI) 引擎
+修復：文字索引溢出 (IndexError)，支援動態字數垂直排版
 """
 import streamlit as st
 from datetime import datetime
@@ -12,13 +13,23 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 隱藏 Streamlit 預設多餘空白
 st.markdown("""
 <style>
     .block-container { padding-top: 1rem; padding-bottom: 2rem; }
     .gui-card { display: flex; justify-content: center; align-items: center; margin: 10px 0; }
 </style>
 """, unsafe_allow_html=True)
+
+# --- 輔助函式：安全垂直文字生成（解決 IndexError） ---
+def make_vert_svg(text, x, y_start, font_size=14, color="#111111", line_gap=19, max_chars=8):
+    if not text:
+        return ""
+    safe_text = str(text)[:max_chars]
+    svg_pieces = []
+    for idx, ch in enumerate(safe_text):
+        y_pos = y_start + (idx * line_gap)
+        svg_pieces.append(f'<text x="{x}" y="{y_pos}" font-size="{font_size}" font-weight="bold" fill="{color}" text-anchor="middle">{ch}</text>')
+    return "".join(svg_pieces)
 
 # --- 側邊控制欄 ---
 st.sidebar.markdown("### 🎛️ 起卦參數設定")
@@ -73,9 +84,8 @@ user_q = st.sidebar.text_input("問事事由", value=c_q)
 
 # --- 產生純圖形介面 (SVG Vector Graphic) ---
 def render_ncc_svg(ben_name, bian_name, shou_name, shou_el, hu_name, ben_type, matter, y_str, m_str, d_str, date_str, moving_line, shi_pos, ying_pos):
-    # 定義六爻資料（以圖一為標準）
+    # 定義六爻資料（以圖一澤風大過為基準）
     lines_data = [
-        # (六獸, 六親, 世應, 爻符類型, 裝天干, 裝地支, 裝五行, 空亡, 變天干, 變地支, 變六親, 變合, 伏天干, 伏地支, 伏五行, 伏六親)
         ("白虎", "妻財", "應", "dong_yin", "辛", "丑", "土", False, "甲", "子", "父母", "合", "", "", "", ""),
         ("玄武", "父母", "", "yang", "辛", "亥", "水", False, "", "", "", "", "庚", "寅", "木", "兄弟"),
         ("青龍", "官鬼", "", "yang", "辛", "酉", "金", True, "", "", "", "", "", "", "", ""),
@@ -84,7 +94,7 @@ def render_ncc_svg(ben_name, bian_name, shou_name, shou_el, hu_name, ben_type, m
         ("滕蛇", "妻財", "", "yin", "丁", "未", "土", False, "", "", "", "", "", "", "", "")
     ]
     
-    # 如果是案例2，動態切換為雷水解
+    # 若為雷水解案例切換
     if ben_name == "雷水解":
         lines_data = [
             ("白虎", "兄弟", "", "yin", "戊", "寅", "木", False, "", "", "", "", "庚", "子", "水", "父母"),
@@ -95,7 +105,6 @@ def render_ncc_svg(ben_name, bian_name, shou_name, shou_el, hu_name, ben_type, m
             ("滕蛇", "妻財", "", "yin", "庚", "戌", "土", False, "", "", "", "", "", "", "", "")
         ]
 
-    # SVG 畫布尺寸
     W = 460
     H = 820
 
@@ -108,25 +117,19 @@ def render_ncc_svg(ben_name, bian_name, shou_name, shou_el, hu_name, ben_type, m
         <rect x="{W-68}" y="8" width="54" height="26" rx="4" fill="#e5e5e5" stroke="#999" stroke-width="1"/>
         <text x="{W-41}" y="26" font-size="14" font-weight="bold" fill="#111" text-anchor="middle">解析</text>
 
-        <!-- 表頭 (42 ~ 72) -->
+        <!-- 表頭 -->
         <rect x="0" y="42" width="{W}" height="30" fill="#ffffff" stroke="#777" stroke-width="1"/>
-        
-        <!-- 欄位格線定義 (X座標) -->
-        <!-- 0:0, 1:32(獸), 2:64(親), 3:92(世應), 4:132(LOGO), 5:178(裝), 6:224(變), 7:256(親), 8:300(伏), 9:330(親), 10:356(日), 11:382(月), 12:408(年), 13:460(事由) -->
     """
 
-    # 表頭文字
+    # 表頭欄位
     headers = [
         (16, "六\\n獸"), (48, "六\\n親"), (78, "世\\n應"), (112, "NCC\\n星僑"), 
         (155, "裝\\n卦"), (201, "變\\n卦"), (240, "六\\n親"), (278, "伏\\n神"), (315, "六\\n親")
     ]
     for x, t in headers:
-        lines = t.split("\\n")
-        if len(lines) == 1:
-            svg += f'<text x="{x}" y="62" font-size="13" font-weight="bold" fill="#111" text-anchor="middle">{lines[0]}</text>'
-        else:
-            svg += f'<text x="{x}" y="55" font-size="12" font-weight="bold" fill="#111" text-anchor="middle">{lines[0]}</text>'
-            svg += f'<text x="{x}" y="68" font-size="12" font-weight="bold" fill="#111" text-anchor="middle">{lines[1]}</text>'
+        parts = t.split("\\n")
+        svg += f'<text x="{x}" y="55" font-size="12" font-weight="bold" fill="#111" text-anchor="middle">{parts[0]}</text>'
+        svg += f'<text x="{x}" y="68" font-size="12" font-weight="bold" fill="#111" text-anchor="middle">{parts[1]}</text>'
 
     # 右上角 年月日
     svg += f"""
@@ -140,7 +143,7 @@ def render_ncc_svg(ben_name, bian_name, shou_name, shou_el, hu_name, ben_type, m
         <text x="370" y="85" font-size="11" fill="#cc0000" font-weight="bold" text-anchor="middle">{date_str.split(' ')[0]}</text>
     """
 
-    # 繪製六爻 (Y: 72 到 402，每爻高 55)
+    # 繪製六爻 (Y: 72 到 402)
     row_h = 55
     y_start = 72
 
@@ -148,7 +151,6 @@ def render_ncc_svg(ben_name, bian_name, shou_name, shou_el, hu_name, ben_type, m
         y = y_start + idx * row_h
         beast, qin, sy, sym, z_gan, z_zhi, z_el, kong, bi_gan, bi_zhi, bi_qin, he, fu_gan, fu_zhi, fu_el, fu_qin = row
 
-        # 底線
         svg += f'<line x1="0" y1="{y+row_h}" x2="330" y2="{y+row_h}" stroke="#777" stroke-width="1"/>'
 
         # 六獸
@@ -160,19 +162,16 @@ def render_ncc_svg(ben_name, bian_name, shou_name, shou_el, hu_name, ben_type, m
         svg += f'<text x="48" y="{y+46}" font-size="15" font-weight="bold" fill="#8b2500" text-anchor="middle">{qin[1]}</text>'
 
         # 世應
-        if sy == "世":
-            svg += f'<text x="78" y="{y+36}" font-size="18" font-weight="bold" fill="#cc0000" text-anchor="middle">世</text>'
-        elif sy == "應":
-            svg += f'<text x="78" y="{y+36}" font-size="18" font-weight="bold" fill="#cc0000" text-anchor="middle">應</text>'
+        if sy:
+            svg += f'<text x="78" y="{y+36}" font-size="18" font-weight="bold" fill="#cc0000" text-anchor="middle">{sy}</text>'
 
-        # 爻象符號 (星僑經典斜線)
+        # 爻象符號 (星僑斜線)
         if sym == "yang":
             svg += f'<line x1="98" y1="{y+38}" x2="126" y2="{y+20}" stroke="#0000cc" stroke-width="4.5" stroke-linecap="round"/>'
         elif sym == "yin":
             svg += f'<line x1="96" y1="{y+40}" x2="110" y2="{y+28}" stroke="#0000cc" stroke-width="4.5" stroke-linecap="round"/>'
             svg += f'<line x1="114" y1="{y+28}" x2="128" y2="{y+16}" stroke="#0000cc" stroke-width="4.5" stroke-linecap="round"/>'
         elif sym == "dong_yin":
-            # 粗體大叉叉 ╳
             svg += f'<line x1="98" y1="{y+18}" x2="126" y2="{y+42}" stroke="#0000cc" stroke-width="5" stroke-linecap="round"/>'
             svg += f'<line x1="98" y1="{y+42}" x2="126" y2="{y+18}" stroke="#0000cc" stroke-width="5" stroke-linecap="round"/>'
 
@@ -201,75 +200,61 @@ def render_ncc_svg(ben_name, bian_name, shou_name, shou_el, hu_name, ben_type, m
             svg += f'<text x="315" y="{y+32}" font-size="15" font-weight="bold" fill="#008000" text-anchor="middle">{fu_qin[0]}</text>'
             svg += f'<text x="315" y="{y+46}" font-size="15" font-weight="bold" fill="#008000" text-anchor="middle">{fu_qin[1]}</text>'
 
-    # 垂直格線 (左側區)
+    # 垂直格線
     col_x = [32, 64, 92, 132, 178, 224, 256, 300, 330]
     for cx in col_x:
         svg += f'<line x1="{cx}" y1="42" x2="{cx}" y2="402" stroke="#777" stroke-width="1"/>'
 
-    # 右側直欄 (330 ~ 460)
+    # 右側直欄（安全垂直排版，徹底杜絕 IndexError）
+    bian_svg_text = make_vert_svg(bian_name, 343, 185, font_size=15, color="#cc0000", line_gap=20)
+    ben_svg_text  = make_vert_svg(ben_name, 369, 185, font_size=15, color="#000080", line_gap=20)
+    shou_svg_text = make_vert_svg(shou_name, 396, 170, font_size=14, color="#cc0000", line_gap=18)
+    hu_svg_text   = make_vert_svg(hu_name, 396, 325, font_size=14, color="#78237b", line_gap=18)
+    matter_svg    = make_vert_svg(matter, 435, 105, font_size=13, color="#78237b", line_gap=20, max_chars=8)
+
     svg += f"""
-        <!-- 變卦直欄 (330~356) -->
+        <!-- 變卦直欄 -->
         <rect x="330" y="90" width="26" height="312" fill="#ffffff" stroke="#777" stroke-width="1"/>
         <text x="343" y="115" font-size="13" font-weight="bold" fill="#111" text-anchor="middle">變</text>
         <text x="343" y="133" font-size="13" font-weight="bold" fill="#111" text-anchor="middle">卦</text>
-        <text x="343" y="185" font-size="15" font-weight="bold" fill="#cc0000" text-anchor="middle">{bian_name[0]}</text>
-        <text x="343" y="205" font-size="15" font-weight="bold" fill="#cc0000" text-anchor="middle">{bian_name[1]}</text>
-        <text x="343" y="225" font-size="15" font-weight="bold" fill="#cc0000" text-anchor="middle">{bian_name[2]}</text>
-        <text x="343" y="245" font-size="15" font-weight="bold" fill="#cc0000" text-anchor="middle">{bian_name[3]}</text>
+        {bian_svg_text}
 
-        <!-- 本卦直欄 (356~382) -->
+        <!-- 本卦直欄 -->
         <rect x="356" y="90" width="26" height="312" fill="#ffffff" stroke="#777" stroke-width="1"/>
         <text x="369" y="115" font-size="13" font-weight="bold" fill="#111" text-anchor="middle">本</text>
         <rect x="358" y="125" width="22" height="18" fill="#1d4ed8" rx="2"/>
         <text x="369" y="138" font-size="12" font-weight="bold" fill="#ffffff" text-anchor="middle">{ben_type}</text>
-        <text x="369" y="185" font-size="15" font-weight="bold" fill="#000080" text-anchor="middle">{ben_name[0]}</text>
-        <text x="369" y="205" font-size="15" font-weight="bold" fill="#000080" text-anchor="middle">{ben_name[1]}</text>
-        <text x="369" y="225" font-size="15" font-weight="bold" fill="#000080" text-anchor="middle">{ben_name[2]}</text>
-        <text x="369" y="245" font-size="15" font-weight="bold" fill="#000080" text-anchor="middle">{ben_name[3]}</text>
+        {ben_svg_text}
 
-        <!-- 首卦與互卦 (382~410) 分兩層 -->
+        <!-- 首卦與互卦 -->
         <rect x="382" y="90" width="28" height="156" fill="#ffffff" stroke="#777" stroke-width="1"/>
         <text x="396" y="112" font-size="13" font-weight="bold" fill="#111" text-anchor="middle">首</text>
         <rect x="385" y="122" width="22" height="18" fill="#8b4513" rx="2"/>
         <text x="396" y="135" font-size="12" font-weight="bold" fill="#ffffff" text-anchor="middle">{shou_el}</text>
-        <text x="396" y="170" font-size="14" font-weight="bold" fill="#cc0000" text-anchor="middle">{shou_name[0]}</text>
-        <text x="396" y="188" font-size="14" font-weight="bold" fill="#cc0000" text-anchor="middle">{shou_name[1]}</text>
-        <text x="396" y="206" font-size="14" font-weight="bold" fill="#cc0000" text-anchor="middle">{shou_name[2]}</text>
-        <text x="396" y="224" font-size="14" font-weight="bold" fill="#cc0000" text-anchor="middle">{shou_name[3]}</text>
+        {shou_svg_text}
 
         <rect x="382" y="246" width="28" height="156" fill="#ffffff" stroke="#777" stroke-width="1"/>
         <text x="396" y="268" font-size="13" font-weight="bold" fill="#111" text-anchor="middle">互</text>
         <rect x="385" y="278" width="22" height="18" fill="#2563eb" rx="2"/>
         <text x="396" y="291" font-size="12" font-weight="bold" fill="#ffffff" text-anchor="middle">沖</text>
-        <text x="396" y="325" font-size="14" font-weight="bold" fill="#78237b" text-anchor="middle">{hu_name[0]}</text>
-        <text x="396" y="343" font-size="14" font-weight="bold" fill="#78237b" text-anchor="middle">{hu_name[1]}</text>
-        <text x="396" y="361" font-size="14" font-weight="bold" fill="#78237b" text-anchor="middle">{hu_name[2]}</text>
-        <text x="396" y="379" font-size="14" font-weight="bold" fill="#78237b" text-anchor="middle">{hu_name[3]}</text>
+        {hu_svg_text}
 
-        <!-- 事由直欄 (410~460) -->
+        <!-- 事由直欄 -->
         <rect x="410" y="42" width="50" height="360" fill="#ffffff" stroke="#777" stroke-width="1"/>
         <text x="435" y="65" font-size="13" font-weight="bold" fill="#111" text-anchor="middle">事</text>
         <text x="435" y="80" font-size="13" font-weight="bold" fill="#111" text-anchor="middle">由</text>
-    """
+        {matter_svg}
 
-    # 垂直印出事由
-    for i, ch in enumerate(matter[:8]):
-        svg += f'<text x="435" y="{105 + i*20}" font-size="13" font-weight="bold" fill="#78237b" text-anchor="middle">{ch}</text>'
-
-    # 底部神煞區域 (402 ~ 820)
-    svg += f"""
-        <!-- 底部大框 -->
+        <!-- 底部神煞區域 (402 ~ 820) -->
         <rect x="0" y="402" width="{W}" height="418" fill="#ffffff" stroke="#555" stroke-width="2"/>
         
-        <!-- 左側：月令親神 (0 ~ 160) -->
-        <!-- 表頭 -->
+        <!-- 左側：月令親神十二運 -->
         <rect x="0" y="402" width="160" height="26" fill="#f8f8f8" stroke="#777" stroke-width="1"/>
         <text x="22" y="419" font-size="12" font-weight="bold" fill="#78237b" text-anchor="middle">子月</text>
         <text x="64" y="419" font-size="12" font-weight="bold" fill="#111" text-anchor="middle">親神</text>
         <text x="105" y="419" font-size="12" font-weight="bold" fill="#111" text-anchor="middle">日</text>
         <text x="140" y="419" font-size="12" font-weight="bold" fill="#111" text-anchor="middle">變爻</text>
 
-        <!-- 5列 -->
         <rect x="0" y="428" width="160" height="25" fill="#fff" stroke="#777" stroke-width="0.8"/>
         <text x="22" y="445" font-size="13" font-weight="bold" fill="#0000cc" text-anchor="middle">水旺</text>
         <text x="64" y="445" font-size="13" font-weight="bold" fill="#cc0000" text-anchor="middle">父</text>
@@ -298,8 +283,7 @@ def render_ncc_svg(ben_name, bian_name, shou_name, shou_el, hu_name, ben_type, m
         <text x="64" y="545" font-size="13" font-weight="bold" fill="#cc0000" text-anchor="middle">官</text>
         <text x="105" y="545" font-size="13" font-weight="bold" fill="#008000" text-anchor="middle">生</text>
 
-        <!-- 中間：十二神煞方陣 (160 ~ 335) -->
-        <!-- 第1列 -->
+        <!-- 中間：十二神煞方陣 -->
         <rect x="160" y="402" width="29" height="75" fill="#fff" stroke="#777" stroke-width="0.8"/>
         <text x="174" y="418" font-size="12" fill="#111" text-anchor="middle">日</text>
         <text x="174" y="432" font-size="12" fill="#111" text-anchor="middle">沖</text>
@@ -330,7 +314,6 @@ def render_ncc_svg(ben_name, bian_name, shou_name, shou_el, hu_name, ben_type, m
         <text x="320" y="432" font-size="12" fill="#111" text-anchor="middle">身</text>
         <text x="320" y="462" font-size="15" font-weight="bold" fill="#008000" text-anchor="middle">卯</text>
 
-        <!-- 第2列神煞 -->
         <rect x="160" y="477" width="29" height="76" fill="#fff" stroke="#777" stroke-width="0.8"/>
         <text x="174" y="493" font-size="12" fill="#111" text-anchor="middle">空</text>
         <text x="174" y="507" font-size="12" fill="#111" text-anchor="middle">亡</text>
@@ -367,7 +350,6 @@ def render_ncc_svg(ben_name, bian_name, shou_name, shou_el, hu_name, ben_type, m
         <rect x="335" y="402" width="125" height="151" fill="#ffffff" stroke="#777" stroke-width="1"/>
         <text x="397" y="420" font-size="14" font-weight="bold" fill="#111" text-anchor="middle">八  字</text>
         
-        <!-- 八字四柱 -->
         <text x="350" y="445" font-size="14" font-weight="bold" fill="#111">庚</text>
         <text x="350" y="462" font-size="14" font-weight="bold" fill="#111">申</text>
         <text x="375" y="445" font-size="14" font-weight="bold" fill="#cc0000">癸</text>
@@ -377,7 +359,6 @@ def render_ncc_svg(ben_name, bian_name, shou_name, shou_el, hu_name, ben_type, m
         <text x="435" y="445" font-size="14" font-weight="bold" fill="#111">乙</text>
         <text x="435" y="462" font-size="14" font-weight="bold" fill="#111">未</text>
 
-        <!-- 大運小字 -->
         <line x1="335" y1="475" x2="460" y2="475" stroke="#ccc" stroke-width="0.8"/>
         <text x="397" y="490" font-size="9" fill="#666" text-anchor="middle">93 83 73 63 53 43 33 23 13 3</text>
         <text x="397" y="515" font-size="9" fill="#999" text-anchor="middle">己 庚 辛 壬 癸 甲 乙 丙 丁 戊</text>
@@ -386,7 +367,7 @@ def render_ncc_svg(ben_name, bian_name, shou_name, shou_el, hu_name, ben_type, m
     """
     return svg
 
-# 渲染主介面
+# --- 頁面輸出 ---
 st.markdown("<h2 style='text-align:center; color:#800000; margin-bottom:10px;'>🏛️ 星僑 (NCC) 六爻占卦純圖形介面</h2>", unsafe_allow_html=True)
 
 tab_gui, tab_ai_text = st.tabs(["📱 純圖形畫面 (1:1 復刻星僑 App)", "📋 卜卦 AI 提示詞 (一鍵複製)"])
