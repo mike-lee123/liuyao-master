@@ -569,14 +569,14 @@ with tab_prompt:
 
 # ==================== 標籤 4：Google Gemini AI 一鍵即時批卦 ====================
 with tab_ai:
-    st.markdown("### ⚡ Google Gemini AI 一鍵即時批卦 (智慧動態適配)")
-    st.caption("系統已配備「動態模型發現引擎」，自動對接您 Google 帳號授權的所有可用模型！")
+    st.markdown("### ⚡ Google Gemini AI 一鍵即時批卦 (支援 Gemini 3.6 最新版)")
+    st.caption("系統已鎖定 Google 最新 Gemini 3.6 系列旗艦模型，並配備連續自動容錯引擎！")
     
     default_key = st.secrets.get("GEMINI_API_KEY", "")
     
     col_k1, col_k2 = st.columns([3, 1])
     gemini_key = col_k1.text_input("輸入 Gemini API Key", value=default_key, type="password")
-    auto_detect = col_k2.checkbox("自動選取最佳模型", value=True)
+    st.caption("💡 優先調用：Google 官方推薦之 `gemini-3.6-flash` 極速大模型")
     
     if st.button("🚀 啟動 Gemini AI 大師現場即時批盤"):
         clean_key = gemini_key.strip() if gemini_key else ""
@@ -584,63 +584,74 @@ with tab_ai:
         if not clean_key:
             st.warning("⚠️ 請先輸入您的 Gemini API Key！")
         else:
-            with st.spinner("🔍 正在連線 Google AI 探測可用模型並進行推演..."):
+            with st.spinner("🔍 正在連線 Google 最新 Gemini 3.6 引擎推演卦理..."):
                 try:
-                    # 第一步：先向 Google 查詢該 Key 真正支援的模型清單 (ListModels)
+                    # 1. 取得帳號可用模型清單
                     list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={clean_key}"
                     list_resp = requests.get(list_url, timeout=15)
                     
-                    if list_resp.status_code != 200:
-                        st.error(f"查詢可用模型失敗，狀態碼：{list_resp.status_code}")
-                        st.json(list_resp.json())
-                    else:
+                    usable_models = []
+                    if list_resp.status_code == 200:
                         models_data = list_resp.json().get("models", [])
-                        # 篩選出支援 generateContent 的模型
                         usable_models = [
                             m["name"] for m in models_data 
                             if "generateContent" in m.get("supportedGenerationMethods", [])
                         ]
-                        
-                        if not usable_models:
-                            st.error("⚠️ 您的金鑰已通過驗證，但目前此專案沒有支援文字生成 (generateContent) 的模型權限。")
-                        else:
-                            # 優先挑選最佳模型 (flash -> pro -> 任意第一個)
-                            target_model = None
-                            for pref in ["1.5-flash", "2.0-flash", "flash", "1.5-pro", "pro"]:
-                                for m_name in usable_models:
-                                    if pref in m_name.lower():
-                                        target_model = m_name
-                                        break
-                                if target_model:
-                                    break
-                                    
-                            if not target_model:
-                                target_model = usable_models[0]
-                                
-                            st.success(f"✅ 成功鎖定您帳號的最佳模型：`{target_model}`")
+                    
+                    # 2. 優先權排序（將 Google 官方指定的 3.6-flash 放在最前列！）
+                    priority_prefs = [
+                        "3.6-flash", "3.6-pro", "3.0-flash", "3-flash",
+                        "2.5-flash", "2.0-flash", "1.5-flash", "flash", "pro"
+                    ]
+                    
+                    sorted_models = []
+                    # 先加入官方最新推薦
+                    sorted_models.append("models/gemini-3.6-flash")
+                    
+                    # 再根據帳號清單排序
+                    for pref in priority_prefs:
+                        for m in usable_models:
+                            if pref in m.lower() and m not in sorted_models:
+                                sorted_models.append(m)
+                    for m in usable_models:
+                        if m not in sorted_models:
+                            sorted_models.append(m)
                             
-                            # 第二步：直接向該真實模型發送生成請求！
-                            gen_url = f"https://generativelanguage.googleapis.com/v1beta/{target_model}:generateContent?key={clean_key}"
-                            headers = {"Content-Type": "application/json"}
-                            payload = {
-                                "contents": [{
-                                    "parts": [{"text": full_prompt_text}]
-                                }],
-                                "generationConfig": {
-                                    "temperature": 0.7,
-                                    "maxOutputTokens": 2048
-                                }
-                            }
-                            
+                    # 3. 逐一嘗試，直到成功回傳 200！
+                    headers = {"Content-Type": "application/json"}
+                    payload = {
+                        "contents": [{
+                            "parts": [{"text": full_prompt_text}]
+                        }],
+                        "generationConfig": {
+                            "temperature": 0.7,
+                            "maxOutputTokens": 2500
+                        }
+                    }
+                    
+                    success = False
+                    last_err = ""
+                    
+                    for target_model in sorted_models:
+                        gen_url = f"https://generativelanguage.googleapis.com/v1beta/{target_model}:generateContent?key={clean_key}"
+                        try:
                             resp = requests.post(gen_url, headers=headers, json=payload, timeout=60)
                             if resp.status_code == 200:
                                 res_json = resp.json()
                                 ans = res_json["candidates"][0]["content"]["parts"][0]["text"]
+                                st.success(f"✅ 成功調用 Google 最新旗艦模型：`{target_model}`")
                                 st.markdown(f"### 🏆 Gemini 大師為【{viewer_name}】親批之全息解盤報告")
                                 st.markdown(ans)
+                                success = True
+                                break
                             else:
-                                st.error(f"呼叫 `{target_model}` 失敗，狀態碼：{resp.status_code}")
-                                st.json(resp.json())
-                                
+                                last_err = f"模型 {target_model} 回傳 {resp.status_code}: {resp.text}"
+                        except Exception as e:
+                            last_err = str(e)
+                            
+                    if not success:
+                        st.error("所有可用模型嘗試完畢仍失敗：")
+                        st.text(last_err)
+                        
                 except Exception as e:
                     st.error(f"連線異常：{e}")
